@@ -29,6 +29,7 @@ typedef struct Token_ {
  */
 typedef struct {
     Token_t *token;     //!< 現在着目しているトークン
+    char *user_input;   //!< 入力プログラム
 } ctrl_blk_9cc_t;
 
 static ctrl_blk_9cc_t ctrl_blk_9cc;
@@ -46,6 +47,24 @@ static void error(char *fmt, ...)
     exit(1);
 }
 
+/*--------------------------------------------------------------------*/
+/*! @brief  エラー箇所表示関数
+ */
+static void error_at(char *loc, char *fmt, ...)
+{
+    ctrl_blk_9cc_t *this = get_myself();
+
+    va_list ap;
+    va_start(ap, fmt);
+
+    int pos = loc - this->user_input;
+    fprintf(stderr, "%s\n", this->user_input);
+    fprintf(stderr, "%*s", pos, " ");
+    fprintf(stderr, "^ ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
 /*--------------------------------------------------------------------*/
 /*! @brief  次のトークンが期待している記号の場合、トークンを1つ読み進めて
  *          真を返す。それ以外の場合、偽を返す。
@@ -71,7 +90,8 @@ static void expect(char op)
     ctrl_blk_9cc_t *this = get_myself();
 
     if ((this->token->kind != TK_RESERVED) || (this->token->str[0] != op)) {
-        error("'%c'ではありません", op);
+        //- error("'%c'ではありません", op);
+        error_at(this->token->str, "'%c'ではありません", op);
     }
     this->token = this->token->next;
 }
@@ -84,7 +104,8 @@ static int expect_number(void)
     ctrl_blk_9cc_t *this = get_myself();
 
     if (this->token->kind != TK_NUM) {
-        error("数ではありません");
+        //- error("数ではありません");
+        error_at(this->token->str, "数ではありません");
     }
     int val = this->token->val;
     this->token = this->token->next;
@@ -164,6 +185,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "引数の個数が正しくありません\n");
         return 1;
     }
+
+    // 制御ブロック初期化
+    memset(this, 0, sizeof(ctrl_blk_9cc_t));
+    this->user_input = argv[1];
 
    // トークナイズする
     this->token = tokenize(argv[1]);

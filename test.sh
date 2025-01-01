@@ -26,5 +26,11 @@ assert 4 "(3+5)/2"
 assert 12 "-10+22"
 assert 7 "+2+-2-9+16"
 assert 10 "-10*(-2)-30++20"
+assert 1 "+100==100"
+assert 1 "-192==-192"
+assert 1 "1 < 100"
+assert 0 "+39 <= -190"
+assert 1 "3 > -90"
+assert 0 "-30 >= +20"
 
 echo OK

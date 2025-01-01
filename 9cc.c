@@ -22,6 +22,7 @@ typedef struct Token_ {
     struct Token_ *next;    //!< 次の入力トークン
     int val;                //!< kindがTK_NUMの場合、その数値
     char *str;              //!< トークン文字列
+    int len;                //!< トークンの長さ
 } Token_t;
 
 /*--------------------------------------------------------------------*/
@@ -32,6 +33,12 @@ typedef enum {
     ND_SUB,         //!< -
     ND_MUL,         //!< *
     ND_DIV,         //!< /
+    ND_GRT,         //!< > ※左右ノードを入れ替えてND_LSSとして処理するため使用しない
+    ND_LSS,         //!< <
+    ND_EQU,         //!< ==
+    ND_NOT_EQU,     //!< !=
+    ND_GRT_EQU,     //!< >= ※左右ノードを入れ替えてND_LSS_EQUとして処理するため使用しない
+    ND_LSS_EQU,     //!< <=
     ND_NUM,         //!< 整数 
 } NodeKind_t;
 
@@ -98,11 +105,12 @@ static void error_at(char *loc, char *fmt, ...)
 /*! @brief  次のトークンが期待している記号の場合、トークンを1つ読み進めて
  *          真を返す。それ以外の場合、偽を返す。
  */
-static bool consume(char op)
+static bool consume(char *op)
 {
     ctrl_blk_9cc_t *this = get_myself();
 
-    if ((this->token->kind != TK_RESERVED) || (this->token->str[0] != op)) {
+    if ((this->token->kind != TK_RESERVED) 
+    || (memcmp(this->token->str, op, this->token->len))) {
         return false;
     }
     this->token = this->token->next;
@@ -114,13 +122,14 @@ static bool consume(char op)
 /*! @brief  次のトークンが期待している記号の場合、トークンを1つ読み進めて
  *          真を返す。それ以外の場合、エラーを報告する。
  */
-static void expect(char op)
+static void expect(char *op)
 {
     ctrl_blk_9cc_t *this = get_myself();
 
-    if ((this->token->kind != TK_RESERVED) || (this->token->str[0] != op)) {
+    if ((this->token->kind != TK_RESERVED) 
+    || (memcmp(this->token->str, op, this->token->len))) {
         //- error("'%c'ではありません", op);
-        error_at(this->token->str, "'%c'ではありません", op);
+        error_at(this->token->str, "'%s'ではありません", op);
     }
     this->token = this->token->next;
 }
@@ -182,9 +191,20 @@ static Token_t *tokenize(char *p)
         }
 
         // 文字であればトークン作成
-        if ((*p == '+') || (*p == '-') || (*p == '*') || (*p == '/') 
-        ||  (*p == '(') || (*p == ')')) {
+        if (((*p == '<') && (*(p+1) == '='))
+        ||  ((*p == '>') && (*(p+1) == '='))
+        ||  ((*p == '=') && (*(p+1) == '='))
+        ||  ((*p == '!') && (*(p+1) == '='))) {
             curr = new_token(TK_RESERVED, curr, p);
+            curr->len = 2;
+            p += 2;
+            continue;
+        }
+        if ((*p == '+') || (*p == '-') || (*p == '*') || (*p == '/') 
+        ||  (*p == '(') || (*p == ')')
+        ||  (*p == '<') || (*p == '>')) {
+            curr = new_token(TK_RESERVED, curr, p);
+            curr->len = 1;
             p++;
             continue;
         }
@@ -237,15 +257,31 @@ static Node_t *new_node_num(NodeKind_t val)
 static Node_t *primary(void)
 {
     // 次のトークンが"("なら、"(" expr ")"のはず
-    if (consume('(')) {
+    if (consume("(")) {
         Node_t *node = expr();
-        expect(')');
+        expect(")");
         return node;
     }
 
     // そうでなければ数値のはず
     return new_node_num(expect_number());
 }
+
+/*--------------------------------------------------------------------*/
+/*! @brief  unary関数
+ */
+static Node_t *unary(void)
+{
+    if (consume("+")) {
+        return primary();
+    }
+    if (consume("-")) {
+        return new_node(ND_SUB, new_node_num(0), primary());
+    }
+
+    return primary();
+}
+
 /*--------------------------------------------------------------------*/
 /*! @brief  mul関数
  */
@@ -254,46 +290,82 @@ static Node_t *mul(void)
     Node_t *node = unary();
 
     for (;;) {
-        if (consume('*')) {
+        if (consume("*")) {
             node = new_node(ND_MUL, node, unary());
-        } else if (consume('/')) {
+        } else if (consume("/")) {
             node = new_node(ND_DIV, node, unary());
         } else {
             return node;
         }
     }
 }
+
+/*--------------------------------------------------------------------*/
+/*! @brief  add関数
+ */
+static Node_t *add(void)
+{
+    Node_t *node = mul();
+
+    for (;;) {
+        if (consume("+")) {
+            node = new_node(ND_ADD, node, mul());
+        } else if (consume("-")) {
+            node = new_node(ND_SUB, node, mul());
+        } else {
+            return node;
+        }
+    }
+}
+
+/*--------------------------------------------------------------------*/
+/*! @brief  relational関数
+ */
+static Node_t *relational(void)
+{
+    Node_t *node = add();
+
+    for (;;) {
+        if (consume("<")) {
+            node = new_node(ND_LSS, node, add());
+        // '>'は左右ノードを入れ替えて'<'として対応する
+        } else if (consume(">")) {
+            node = new_node(ND_LSS, add(), node);
+        } else if (consume("<=")) {
+            node = new_node(ND_LSS_EQU, node, add());
+        // ">="は左右ノードを入れ替えて"<="として対応する
+        } else if (consume(">=")) {
+            node = new_node(ND_LSS_EQU, add(), node);
+        } else {
+            return node;
+        }
+    }
+}
+
+/*--------------------------------------------------------------------*/
+/*! @brief  equality関数
+ */
+static Node_t *equality(void)
+{
+    Node_t *node = relational();
+
+    for (;;) {
+        if (consume("==")) {
+            node = new_node(ND_EQU, node, relational());
+        } else if (consume("!=")) {
+            node = new_node(ND_NOT_EQU, node, relational());
+        } else {
+            return node;
+        }
+    }
+}
+
 /*--------------------------------------------------------------------*/
 /*! @brief  expr関数
  */
 static Node_t *expr(void)
 {
-    Node_t *node = mul();
-
-    for (;;) {
-        if (consume('+')) {
-            node = new_node(ND_ADD, node, mul());
-        } else if (consume('-')) {
-            node = new_node(ND_SUB, node, mul());
-        } else {
-            return node;
-        }
-    }   
-}
-
-/*--------------------------------------------------------------------*/
-/*! @brief  unary関数
- */
-static Node_t *unary(void)
-{
-    if (consume('+')) {
-        return primary();
-    }
-    if (consume('-')) {
-        return new_node(ND_SUB, new_node_num(0), primary());
-    }
-
-    return primary();
+    return equality();
 }
 /*--------------------------------------------------------------------*/
 /*! @brief  gen関数
@@ -328,6 +400,26 @@ static void gen(Node_t *node)
     case ND_DIV:
         printf("    cqo\n");
         printf("    idiv rdi\n");
+        break;
+    case ND_EQU:
+        printf("    cmp rax, rdi\n");
+        printf("    sete al\n");
+        printf("    movzb rax, al\n");
+        break;
+    case ND_NOT_EQU:
+        printf("    cmp rax, rdi\n");
+        printf("    setne al\n");
+        printf("    movzb rax, al\n");
+        break;
+    case ND_LSS:
+        printf("    cmp rax, rdi\n");
+        printf("    setl al\n");
+        printf("    movzb rax, al\n");
+        break;
+    case ND_LSS_EQU:
+        printf("    cmp rax, rdi\n");
+        printf("    setle al\n");
+        printf("    movzb rax, al\n");
         break;
     default:
         break;

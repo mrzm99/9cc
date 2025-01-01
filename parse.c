@@ -4,56 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "9cc.h"
 
 /*--------------------------------------------------------------------*/
-/*! @brief  トークンの種類
- */
-typedef enum {
-    TK_RESERVED = 0,    //!< 記号
-    TK_NUM,             //!< 整数トークン
-    TK_EOF,             //!< 入力の終わりを表すトークン
-} TokenKind_t;
-
-/*--------------------------------------------------------------------*/
-/*! @brief  トークン型
- */
-typedef struct Token_ {
-    TokenKind_t kind;       //!< トークンの型
-    struct Token_ *next;    //!< 次の入力トークン
-    int val;                //!< kindがTK_NUMの場合、その数値
-    char *str;              //!< トークン文字列
-    int len;                //!< トークンの長さ
-} Token_t;
-
-/*--------------------------------------------------------------------*/
-/*! @brief  抽象構文木のノードの種類
- */
-typedef enum {
-    ND_ADD = 0,     //!< +
-    ND_SUB,         //!< -
-    ND_MUL,         //!< *
-    ND_DIV,         //!< /
-    ND_GRT,         //!< > ※左右ノードを入れ替えてND_LSSとして処理するため使用しない
-    ND_LSS,         //!< <
-    ND_EQU,         //!< ==
-    ND_NOT_EQU,     //!< !=
-    ND_GRT_EQU,     //!< >= ※左右ノードを入れ替えてND_LSS_EQUとして処理するため使用しない
-    ND_LSS_EQU,     //!< <=
-    ND_NUM,         //!< 整数 
-} NodeKind_t;
-
-/*--------------------------------------------------------------------*/
-/*! @brief  抽象構文木のノードの型
- */
-typedef struct Node_ {
-    NodeKind_t kind;    //!< ノードの型
-    struct Node_ *lhs;  //!< 左辺
-    struct Node_ *rhs;  //!< 右辺
-    int val;            //!< kindがND_NUMの場合のみ使用する
-} Node_t;
-
-/*--------------------------------------------------------------------*/
-/*! @brief  制御ブロック(グローバル変数)
+/*! @brief  制御ブロック
  */
 typedef struct {
     Token_t *token;     //!< 現在着目しているトークン
@@ -64,12 +18,9 @@ static ctrl_blk_9cc_t ctrl_blk_9cc;
 #define get_myself()    (&ctrl_blk_9cc)
 
 /*--------------------------------------------------------------------*/
-/*! @brief  プロトタイプ
+/*! @brief  プロトタイプ宣言
  */
-static Node_t *expr(void);
-static Node_t *mul(void);
-static Node_t *primary(void);
-static Node_t *unary(void);
+Node_t *expr(void);
 
 /*--------------------------------------------------------------------*/
 /*! @brief  エラー報告関数
@@ -128,7 +79,6 @@ static void expect(char *op)
 
     if ((this->token->kind != TK_RESERVED) 
     || (memcmp(this->token->str, op, this->token->len))) {
-        //- error("'%c'ではありません", op);
         error_at(this->token->str, "'%s'ではありません", op);
     }
     this->token = this->token->next;
@@ -142,7 +92,6 @@ static int expect_number(void)
     ctrl_blk_9cc_t *this = get_myself();
 
     if (this->token->kind != TK_NUM) {
-        //- error("数ではありません");
         error_at(this->token->str, "数ではありません");
     }
     int val = this->token->val;
@@ -177,8 +126,9 @@ static Token_t *new_token(TokenKind_t kind, Token_t *curr, char *str)
 /*--------------------------------------------------------------------*/
 /*! @brief  入力文字列pをトークナイズして返す。
  */
-static Token_t *tokenize(char *p)
-{
+Token_t *tokenize(char *p)
+{   
+    ctrl_blk_9cc_t *this = get_myself();
     Token_t head;
     head.next = NULL;
     Token_t *curr = &head;
@@ -220,6 +170,8 @@ static Token_t *tokenize(char *p)
     }
     // 最終トークンを作成
     new_token(TK_EOF, curr, p);
+
+    this->token = head.next;
 
     return head.next;
 }
@@ -363,102 +315,7 @@ static Node_t *equality(void)
 /*--------------------------------------------------------------------*/
 /*! @brief  expr関数
  */
-static Node_t *expr(void)
+Node_t *expr(void)
 {
     return equality();
-}
-/*--------------------------------------------------------------------*/
-/*! @brief  gen関数
- */
-static void gen(Node_t *node)
-{   
-    // 整数（終端ノード）
-    if (node->kind == ND_NUM) {
-        printf("    push %d\n", node->val);
-        return;
-    }
-
-    // 左辺と右辺を処理
-    gen(node->lhs);
-    gen(node->rhs);
-
-    // オペランドをpop
-    printf("    pop rdi\n");
-    printf("    pop rax\n");
-
-    // 演算子に合わせてアセンブリ生成
-    switch(node->kind) {
-    case ND_ADD:
-        printf("    add rax, rdi\n");
-        break;
-    case ND_SUB:
-        printf("    sub rax, rdi\n");
-        break;
-    case ND_MUL:
-        printf("    imul rax, rdi\n");
-        break;
-    case ND_DIV:
-        printf("    cqo\n");
-        printf("    idiv rdi\n");
-        break;
-    case ND_EQU:
-        printf("    cmp rax, rdi\n");
-        printf("    sete al\n");
-        printf("    movzb rax, al\n");
-        break;
-    case ND_NOT_EQU:
-        printf("    cmp rax, rdi\n");
-        printf("    setne al\n");
-        printf("    movzb rax, al\n");
-        break;
-    case ND_LSS:
-        printf("    cmp rax, rdi\n");
-        printf("    setl al\n");
-        printf("    movzb rax, al\n");
-        break;
-    case ND_LSS_EQU:
-        printf("    cmp rax, rdi\n");
-        printf("    setle al\n");
-        printf("    movzb rax, al\n");
-        break;
-    default:
-        break;
-    }
-
-    printf("    push rax\n");
-}
-/*--------------------------------------------------------------------*/
-/*! @brief  main関数
- */
-int main(int argc, char **argv)
-{
-    ctrl_blk_9cc_t *this = get_myself();
-
-    if (argc != 2) {
-        fprintf(stderr, "引数の個数が正しくありません\n");
-        return 1;
-    }
-
-    // 制御ブロック初期化
-    memset(this, 0, sizeof(ctrl_blk_9cc_t));
-    this->user_input = argv[1];
-
-   // トークナイズしてパースする
-    this->token = tokenize(this->user_input);
-    Node_t *node = expr();
-
-    // アセンブリの前半部分を出力
-    printf(".intel_syntax noprefix\n");
-    printf(".global main\n");
-    printf("main:\n");
-
-    // 抽象構文木を下りながらコード生成
-    gen(node);
-
-    // スタックトップに式全体の値が残っているはずなので
-    // それをRAXにロードして関数からの戻り値とする
-    printf("    pop rax\n");
-    printf("    ret\n");
-
-    return 0;
 }

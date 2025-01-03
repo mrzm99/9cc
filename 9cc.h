@@ -53,6 +53,16 @@ typedef struct Node_ {
 } Node_t;
 
 /*--------------------------------------------------------------------*/
+/*! @brief  ローカル変数の型
+ */
+typedef struct LVar_ {
+    struct LVar_ *next; //!< 次の変数 or NULL
+    char *name;         //!< 変数名
+    int len;            //!< 変数名の長さ
+    int offset;         //!< RBPからのオフセット
+} LVar_t;
+
+/*--------------------------------------------------------------------*/
 /*! @brief  エラー報告関数
  */
 void error(char *fmt, ...);

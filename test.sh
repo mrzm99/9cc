@@ -38,5 +38,7 @@ assert 99 "a=b=99;"
 assert 11 "a=1;b=c=11;"
 assert 10 "b=1+1+1+7;a=b;"
 assert 0 "a = -9;c = a++1 + 2 *4;"
+assert 1 "fogefoge = 1;"
+assert 99 "foge=30; piyo=70; foobar = piyo +foge -1;"
 
 echo OK

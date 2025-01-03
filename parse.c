@@ -13,6 +13,7 @@ typedef struct {
     Token_t *token;     //!< 現在着目しているトークン
     char *user_input;   //!< 入力プログラム
     Node_t *code[100];  //!< 各statementに対する抽象構文木
+    LVar_t *locals;     //!< ローカル変数リスト
 } ctrl_blk_9cc_t;
 
 static ctrl_blk_9cc_t ctrl_blk_9cc;
@@ -130,6 +131,30 @@ static Token_t *new_token(TokenKind_t kind, Token_t *curr, char *str)
 }
 
 /*--------------------------------------------------------------------*/
+/*! @brief  ローカル変数作成
+ */
+static Token_t *new_local_var(Token_t *curr, char *str)
+{   
+    ctrl_blk_9cc_t *this = get_myself();
+
+    // 変数名の長さを取得
+    int len = 0;
+    int ofs = 0;
+    while (1) {
+        if (('a' <= *(str + ofs)) && (*(str + ofs) <= 'z')) {
+            len++;
+            ofs++;
+        } else {
+            break;
+        }
+    }
+    Token_t *token = new_token(TK_IDENT, curr, str);
+    token->len = len;
+
+    return token;
+}
+
+/*--------------------------------------------------------------------*/
 /*! @brief  入力文字列pをトークナイズして返す。
  */
 void tokenize(char *p)
@@ -148,9 +173,8 @@ void tokenize(char *p)
 
         // 変数(a~z)であればトークン作成
         if (('a' <= *p) && (*p <= 'z')) {
-            curr = new_token(TK_IDENT, curr, p);
-            curr->len = 1;
-            p++;
+            curr = new_local_var(curr, p);
+            p = p + curr->len;
             continue;
         }
 
@@ -235,10 +259,28 @@ static Token_t *consume_ident(void)
 }
 
 /*--------------------------------------------------------------------*/
+/*! @brief  ローカル変数の検索
+ */
+static LVar_t *find_lvar(Token_t *token)
+{
+    ctrl_blk_9cc_t *this = get_myself();
+
+    for (LVar_t *var = this->locals; var; var = var->next) {
+        if ((var->len == token->len) && (!memcmp(token->str, var->name, var->len))) {
+            return var;
+        }
+    }
+
+    return NULL;
+}
+
+/*--------------------------------------------------------------------*/
 /*! @brief  primary関数
  */
 static Node_t *primary(void)
-{
+{   
+    ctrl_blk_9cc_t *this = get_myself();
+
     // 次のトークンが"("なら、"(" expr ")"のはず
     if (consume("(")) {
         Node_t *node = expr();
@@ -251,7 +293,23 @@ static Node_t *primary(void)
     if (token) {
         Node_t *node = calloc(1, sizeof(Node_t));
         node->kind = ND_LVAR;
-        node->offset = (token->str[0] - 'a' + 1) * 8;
+
+        LVar_t *lvar = find_lvar(token);
+        if (lvar) {
+            node->offset = lvar->offset;
+        } else {
+            lvar = calloc(1, sizeof(LVar_t));
+            lvar->next = this->locals;
+            lvar->name = token->str;
+            lvar->len = token->len;
+            if (this->locals) {
+                lvar->offset = this->locals->offset + 8;
+            } else {
+                lvar->offset = 8;
+            }
+            node->offset = lvar->offset;
+            this->locals = lvar;
+        }
         return node;
     }
 

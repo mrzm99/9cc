@@ -6,6 +6,7 @@
  */
 typedef enum {
     TK_RESERVED = 0,    //!< 記号
+    TK_IDENT,           //!< 識別子
     TK_NUM,             //!< 整数トークン
     TK_EOF,             //!< 入力の終わりを表すトークン
 } TokenKind_t;
@@ -35,6 +36,8 @@ typedef enum {
     ND_NOT_EQU,     //!< !=
     ND_GRT_EQU,     //!< >= ※左右ノードを入れ替えてND_LSS_EQUとして処理するため使用しない
     ND_LSS_EQU,     //!< <=
+    ND_ASSIGN,      //!< =
+    ND_LVAR,        //!< left value
     ND_NUM,         //!< 整数 
 } NodeKind_t;
 
@@ -46,21 +49,37 @@ typedef struct Node_ {
     struct Node_ *lhs;  //!< 左辺
     struct Node_ *rhs;  //!< 右辺
     int val;            //!< kindがND_NUMの場合のみ使用する
+    int offset;         //!< kindがND_LVARの場合のみ使用する
 } Node_t;
+
+/*--------------------------------------------------------------------*/
+/*! @brief  エラー報告関数
+ */
+void error(char *fmt, ...);
 
 /*--------------------------------------------------------------------*/
 /*! @brief  入力文字列pをトークナイズして返す
  */
-Token_t *tokenize(char *p);
+void tokenize(char *p);
 
 /*--------------------------------------------------------------------*/
-/*! @brief  抽象構文木を返す
+/*! @brief  構文解析を実行
  */
-Node_t *expr(void);
+void program(void);
 
 /*--------------------------------------------------------------------*/
 /*! @brief  アセンブラコードを生成する
  */
 void gen(Node_t *node);
+
+/*--------------------------------------------------------------------*/
+/*! @brief  構文解析結果を取得
+ */
+void get_code(Node_t *p[100]);
+
+/*--------------------------------------------------------------------*/
+/*! @brief  初期化
+ */
+void parser_init(char *p);
 
 #endif  /* __INCLUDE_9cc_H__ */

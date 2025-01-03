@@ -12,6 +12,7 @@
 typedef struct {
     Token_t *token;     //!< 現在着目しているトークン
     char *user_input;   //!< 入力プログラム
+    Node_t *code[100];  //!< 各statementに対する抽象構文木
 } ctrl_blk_9cc_t;
 
 static ctrl_blk_9cc_t ctrl_blk_9cc;
@@ -20,12 +21,12 @@ static ctrl_blk_9cc_t ctrl_blk_9cc;
 /*--------------------------------------------------------------------*/
 /*! @brief  プロトタイプ宣言
  */
-Node_t *expr(void);
+static Node_t *expr(void);
 
 /*--------------------------------------------------------------------*/
 /*! @brief  エラー報告関数
  */
-static void error(char *fmt, ...)
+void error(char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
@@ -52,6 +53,7 @@ static void error_at(char *loc, char *fmt, ...)
     fprintf(stderr, "\n");
     exit(1);
 }
+
 /*--------------------------------------------------------------------*/
 /*! @brief  次のトークンが期待している記号の場合、トークンを1つ読み進めて
  *          真を返す。それ以外の場合、偽を返す。
@@ -59,6 +61,10 @@ static void error_at(char *loc, char *fmt, ...)
 static bool consume(char *op)
 {
     ctrl_blk_9cc_t *this = get_myself();
+
+    if (strlen(op) != this->token->len) {
+        return false;
+    }
 
     if ((this->token->kind != TK_RESERVED) 
     || (memcmp(this->token->str, op, this->token->len))) {
@@ -126,7 +132,7 @@ static Token_t *new_token(TokenKind_t kind, Token_t *curr, char *str)
 /*--------------------------------------------------------------------*/
 /*! @brief  入力文字列pをトークナイズして返す。
  */
-Token_t *tokenize(char *p)
+void tokenize(char *p)
 {   
     ctrl_blk_9cc_t *this = get_myself();
     Token_t head;
@@ -136,6 +142,14 @@ Token_t *tokenize(char *p)
     while (*p) {
         // 空白文字をスキップ
         if (isspace(*p)) {
+            p++;
+            continue;
+        }
+
+        // 変数(a~z)であればトークン作成
+        if (('a' <= *p) && (*p <= 'z')) {
+            curr = new_token(TK_IDENT, curr, p);
+            curr->len = 1;
             p++;
             continue;
         }
@@ -152,7 +166,8 @@ Token_t *tokenize(char *p)
         }
         if ((*p == '+') || (*p == '-') || (*p == '*') || (*p == '/') 
         ||  (*p == '(') || (*p == ')')
-        ||  (*p == '<') || (*p == '>')) {
+        ||  (*p == '<') || (*p == '>')
+        ||  (*p == ';') || (*p == '=')) {
             curr = new_token(TK_RESERVED, curr, p);
             curr->len = 1;
             p++;
@@ -171,9 +186,8 @@ Token_t *tokenize(char *p)
     // 最終トークンを作成
     new_token(TK_EOF, curr, p);
 
+    // トークナイズ結果を記憶
     this->token = head.next;
-
-    return head.next;
 }
 
 /*--------------------------------------------------------------------*/
@@ -204,6 +218,23 @@ static Node_t *new_node_num(NodeKind_t val)
 }
 
 /*--------------------------------------------------------------------*/
+/*! @brief  consume_ident関数
+ */
+static Token_t *consume_ident(void)
+{
+    ctrl_blk_9cc_t *this = get_myself();
+    Token_t *token;
+
+    if (this->token->kind != TK_IDENT) {
+        return NULL;
+    }
+    token = this->token;
+    this->token = this->token->next;
+
+    return token;
+}
+
+/*--------------------------------------------------------------------*/
 /*! @brief  primary関数
  */
 static Node_t *primary(void)
@@ -212,6 +243,15 @@ static Node_t *primary(void)
     if (consume("(")) {
         Node_t *node = expr();
         expect(")");
+        return node;
+    }
+
+    // 次のトークンが変数ならノード生成
+    Token_t *token = consume_ident();
+    if (token) {
+        Node_t *node = calloc(1, sizeof(Node_t));
+        node->kind = ND_LVAR;
+        node->offset = (token->str[0] - 'a' + 1) * 8;
         return node;
     }
 
@@ -313,9 +353,67 @@ static Node_t *equality(void)
 }
 
 /*--------------------------------------------------------------------*/
+/*! @brief  assign関数
+ */
+static Node_t *assign(void)
+{
+    Node_t *node = equality();
+    if (consume("=")) {
+        node = new_node(ND_ASSIGN, node, assign());
+    }
+    return node;
+}
+
+/*--------------------------------------------------------------------*/
 /*! @brief  expr関数
  */
-Node_t *expr(void)
+static Node_t *expr(void)
 {
-    return equality();
+    return assign();
+}
+
+/*--------------------------------------------------------------------*/
+/*! @brief  stmt関数
+ */
+static Node_t *stmt(void)
+{
+    Node_t *node = expr();
+    expect(";");
+
+    return node;
+}
+
+/*--------------------------------------------------------------------*/
+/*! @brief  program関数
+ */
+void program(void)
+{
+    ctrl_blk_9cc_t *this = get_myself();
+    int i = 0;
+    
+    while (!at_eof()) {
+        this->code[i] = stmt();
+        i++;
+    }
+    this->code[i] = NULL;
+}
+
+/*--------------------------------------------------------------------*/
+/*! @brief code取得（parse.cのグローバル変数をmain.cで直接アクセスしないように用意しているが微妙な気がする。。。）
+ */
+void get_code(Node_t *p[100])
+{
+    ctrl_blk_9cc_t *this = get_myself();
+    memcpy(p, this->code, sizeof(Node_t*) * 100);
+}
+
+/*--------------------------------------------------------------------*/
+/*! @brief  初期化
+ */
+void parser_init(char *p)
+{
+    ctrl_blk_9cc_t *this = get_myself();
+
+    memset(this, 0, sizeof(ctrl_blk_9cc_t));
+    this->user_input = p;
 }
